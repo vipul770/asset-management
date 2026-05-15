@@ -50,6 +50,7 @@ export default function AddUserPage() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [showPass, setShowPass]    = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const set = (field, val) => {
     setForm(f => ({ ...f, [field]: val }))
@@ -77,11 +78,88 @@ export default function AddUserPage() {
     return e
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+  
     const e = validate()
-    if (Object.keys(e).length) { setErrors(e); return }
-    setSubmitted(true)
-    setTimeout(() => navigate('/users'), 1500)
+  
+    if (Object.keys(e).length) {
+      setErrors(e)
+      return
+    }
+  
+    try {
+    
+      setLoading(true)
+    
+      const token = localStorage.getItem('access_token')
+    
+      const res = await fetch('http://localhost:8000/api/users/add', {
+        method: 'POST',
+      
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+      
+        body: JSON.stringify({
+        
+          first_name: form.firstName,
+          last_name: form.lastName,
+        
+          email: form.email,
+          phone: form.phone,
+        
+          employee_id: form.employeeId,
+        
+          role: form.role.toLowerCase(),
+        
+          department: form.department,
+          location: form.location,
+        
+          joining_date: form.joiningDate,
+        
+          password: form.password,
+          confirm_password: form.confirmPassword,
+        
+          notes: form.notes
+        })
+      })
+    
+      const data = await res.json()
+    
+      if (res.ok) {
+      
+        setSubmitted(true)
+      
+        setTimeout(() => {
+          navigate('/users')
+        }, 1500)
+      
+      } else {
+      
+        if (data.detail) {
+        
+          if (typeof data.detail === 'object') {
+            setErrors(data.detail)
+          } else {
+            alert(data.detail)
+          }
+        
+        } else {
+          alert('Failed to create user')
+        }
+      }
+    
+    } catch (err) {
+    
+      console.log(err)
+    
+      alert('Server connection failed')
+    
+    } finally {
+    
+      setLoading(false)
+    }
   }
 
   const handleAvatar = (file) => {
@@ -138,7 +216,7 @@ export default function AddUserPage() {
               className="h-10 px-5 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition"
               style={{ background: 'linear-gradient(135deg, #1d9e75 0%, #0f6e56 100%)' }}
             >
-              Create User
+              {loading ? 'Creating...' : 'Create User'}
             </button>
           </div>
         </div>
@@ -411,7 +489,7 @@ export default function AddUserPage() {
               className="h-10 px-6 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition"
               style={{ background: 'linear-gradient(135deg, #1d9e75 0%, #0f6e56 100%)' }}
             >
-              Create User
+              {loading ? 'Creating...' : 'Create User'}
             </button>
           </div>
 

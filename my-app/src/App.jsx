@@ -14,6 +14,7 @@ import AddAssetPage from './component/user/Addasset'
 import AddUserPage from './component/user/AddUser'
 import MaintenancePage from './component/user/Maintenance'
 import AddMaintenancePage from './component/user/AddMaintenance'
+import UsersPage from './component/user/User'
 
 const publicRoutes = ['/', '/login', '/register']
 
@@ -33,10 +34,11 @@ function AppContent() {
         <Route path="/register"   element={<RegisterPage />} />
         <Route path="/dashboard"  element={<DashboardPage />} />
         <Route path="/assets"     element={<AssetsPage />} />
-        <Route path="/add-asset" element={<AddAssetPage />} />
+        <Route path="/add-asset"  element={<AddAssetPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/reports"    element={<ReportsPage />} />
-        <Route path="/users/add" element={<AddUserPage />} />
+        <Route path="/users"      element={<UsersPage />} />
+        <Route path="/users/add"  element={<AddUserPage />} />
         <Route path="/maintenance"     element={<MaintenancePage />} />
         <Route path="/maintenance/add" element={<AddMaintenancePage />} />
       </Routes>
