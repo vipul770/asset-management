@@ -21,13 +21,13 @@ const ROLE_LABELS = {
 export default function DashboardPage() {
   const navigate = useNavigate()
 
-  const [me,      setMe]      = useState(null)
-  const [stats,   setStats]   = useState(null)
-  const [assets,  setAssets]  = useState([])
-  const [users,   setUsers]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
-  
+  const [me,       setMe]       = useState(null)
+  const [stats,    setStats]    = useState(null)
+  const [assets,   setAssets]   = useState([])
+  const [users,    setUsers]    = useState([])
+  const [activity, setActivity] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState('')
 
   const token = localStorage.getItem('access_token')
   const isAdminOrManager = ['admin', 'manager'].includes(me?.role?.toLowerCase())
@@ -43,15 +43,18 @@ export default function DashboardPage() {
     }
 
     try {
+      // 1. Profile
       const meRes = await fetch(`${API}/api/users/me`, { headers })
       if (meRes.status === 401) { localStorage.clear(); navigate('/login'); return }
       const meData = await meRes.json()
       setMe(meData)
       localStorage.setItem('user', JSON.stringify(meData))
 
+      // 2. Stats
       const statsRes = await fetch(`${API}/api/reports/dashboard-stats`, { headers })
       if (statsRes.ok) setStats(await statsRes.json())
 
+      // 3. Assets
       const assetsRes = await fetch(`${API}/api/assets`, { headers })
       if (assetsRes.ok) {
         const all = await assetsRes.json()
@@ -63,6 +66,7 @@ export default function DashboardPage() {
         setAssets(filtered)
       }
 
+      // 4. Users — admin/manager only
       if (['admin', 'manager'].includes(meData.role?.toLowerCase())) {
         const usersRes = await fetch(`${API}/api/users`, { headers })
         if (usersRes.ok) {
@@ -70,6 +74,14 @@ export default function DashboardPage() {
           setUsers(Array.isArray(allUsers) ? allUsers.slice(0, 5) : [])
         }
       }
+
+      // 5. Recent activity
+      const activityRes = await fetch(`${API}/api/reports/recent-activity`, { headers })
+      if (activityRes.ok) {
+        const actData = await activityRes.json()
+        setActivity(Array.isArray(actData) ? actData : [])
+      }
+
     } catch {
       setError('Failed to load dashboard data. Make sure the backend is running.')
     } finally {
@@ -83,8 +95,6 @@ export default function DashboardPage() {
     if (saved) { try { setMe(JSON.parse(saved)) } catch {} }
     fetchData()
   }, [token, navigate, fetchData])
-
-  // const handleLogout = () => { localStorage.clear(); navigate('/login') }
 
   const formatDate = (d) => {
     if (!d) return '—'
@@ -123,7 +133,6 @@ export default function DashboardPage() {
             >
               🔔
             </button>
-            
           </div>
         </div>
 
@@ -232,26 +241,49 @@ export default function DashboardPage() {
 
             {/* Recent Activity */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-              <h2 className="text-base font-black text-slate-800 mb-4">Recent Activity</h2>
-              <div className="space-y-3">
-                {[
-                  ['📦', 'New asset added',               '2 mins ago'],
-                  ['👤', 'User assigned laptop',          '10 mins ago'],
-                  ['🛠️', 'Maintenance request submitted', '30 mins ago'],
-                  ['📊', 'Monthly report generated',      '1 hour ago'],
-                  ['🔔', 'Asset warranty expiring',       '2 hours ago']
-                ].map(([icon, title, time], i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-base flex-shrink-0">
-                      {icon}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800 text-sm">{title}</p>
-                      <p className="text-slate-400 text-xs mt-0.5">{time}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-black text-slate-800">Recent Activity</h2>
+                <button
+                  onClick={fetchData}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition"
+                  title="Refresh activity"
+                >
+                  🔄
+                </button>
               </div>
+
+              {loading ? (
+                <div className="space-y-3">
+                  {[1,2,3,4,5].map(i => (
+                    <div key={i} className="flex items-start gap-3 animate-pulse">
+                      <div className="w-9 h-9 rounded-xl bg-slate-200 flex-shrink-0" />
+                      <div className="flex-1 space-y-1.5 pt-1">
+                        <div className="h-3 bg-slate-200 rounded w-3/4" />
+                        <div className="h-2.5 bg-slate-100 rounded w-1/3" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : activity.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-2">📋</div>
+                  <p className="text-slate-400 text-sm">No activity yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {activity.map((item, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-base flex-shrink-0">
+                        {item.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-800 text-sm truncate">{item.title}</p>
+                        <p className="text-slate-400 text-xs mt-0.5">{item.time}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>{/* end grid */}

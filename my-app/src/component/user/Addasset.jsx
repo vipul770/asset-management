@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserLayout from './UserLayout'
 
-const categories = ['Laptop', 'Mobile', 'Printer', 'Server', 'Networking', 'Furniture', 'Other']
+const API = 'http://localhost:8000'
+
 const locations  = ['Pune Office', 'Mumbai Office', 'Delhi Office', 'Bangalore Office', 'Remote']
-const statuses   = ['Available', 'Assigned', 'Maintenance']
-const conditions = ['New', 'Good', 'Fair', 'Poor']
+const statuses   = ['available', 'assigned', 'maintenance']
+const conditions = ['new', 'good', 'fair', 'poor']
 
 const inputCls = (err) =>
   `w-full h-10 rounded-xl border px-3 text-sm outline-none transition ${
@@ -34,56 +35,128 @@ function Field({ label, required, error, children }) {
 }
 
 export default function AddAssetPage() {
-  const navigate  = useNavigate()
-  const fileRef   = useRef(null)
+  const navigate = useNavigate()
+  const fileRef  = useRef(null)
+
+  const token = localStorage.getItem('access_token')
 
   const [form, setForm] = useState({
-    name: '', assetId: '', category: '', status: 'Available',
-    condition: 'New', location: '', assignedTo: '',
+    name: '', assetId: '', categoryId: '', status: 'available',
+    condition: 'new', location: '', assignedTo: '',
     purchaseDate: '', purchasePrice: '', warranty: '',
     vendor: '', serialNumber: '', description: ''
   })
 
-  const [errors, setErrors]       = useState({})
-  const [submitted, setSubmitted]  = useState(false)
-  const [image, setImage]          = useState(null)      // base64 preview
-  const [imageFile, setImageFile]  = useState(null)      // actual File object
-  const [dragging, setDragging]    = useState(false)
+  const [categories,  setCategories]  = useState([])
+  const [errors,      setErrors]      = useState({})
+  const [loading,     setLoading]     = useState(false)
+  const [submitted,   setSubmitted]   = useState(false)
+  const [serverError, setServerError] = useState('')
+  const [image,       setImage]       = useState(null)
+  const [imageFile,   setImageFile]   = useState(null)
+  const [dragging,    setDragging]    = useState(false)
+
+  // Fetch categories from backend
+  useEffect(() => {
+    if (!token) { navigate('/login'); return }
+    fetch(`${API}/api/categories`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setCategories(data) })
+      .catch(() => {})
+  }, [])
 
   const set = (field, val) => {
     setForm(f => ({ ...f, [field]: val }))
     setErrors(e => ({ ...e, [field]: '' }))
+    setServerError('')
   }
 
   const validate = () => {
     const e = {}
-    if (!form.name.trim())           e.name          = 'Asset name is required'
-    if (!form.assetId.trim())        e.assetId       = 'Asset ID is required'
-    if (!form.category)              e.category      = 'Category is required'
-    if (!form.location)              e.location      = 'Location is required'
-    if (!form.purchaseDate)          e.purchaseDate  = 'Purchase date is required'
-    if (!form.purchasePrice.trim())  e.purchasePrice = 'Purchase price is required'
+    if (!form.name.trim())          e.name          = 'Asset name is required'
+    if (!form.assetId.trim())       e.assetId       = 'Asset ID is required'
+    if (!form.location)             e.location      = 'Location is required'
+    if (!form.purchaseDate)         e.purchaseDate  = 'Purchase date is required'
+    if (!form.purchasePrice.trim()) e.purchasePrice = 'Purchase price is required'
     return e
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const e = validate()
     if (Object.keys(e).length) { setErrors(e); return }
-    setSubmitted(true)
-    setTimeout(() => navigate('/assets'), 1500)
+
+    setLoading(true)
+    setServerError('')
+
+    try {
+      const payload = {
+        asset_id:        form.assetId,
+        name:            form.name,
+        category_id:     form.categoryId ? parseInt(form.categoryId) : null,
+        serial_number:   form.serialNumber || null,
+        vendor:          form.vendor       || null,
+        condition:       form.condition,
+        status:          form.status,
+        location:        form.location     || null,
+        purchase_date:   form.purchaseDate || null,
+        purchase_price:  form.purchasePrice ? parseFloat(form.purchasePrice) : null,
+        warranty_months: form.warranty ? parseInt(form.warranty) : null,
+        description:     form.description  || null,
+      }
+
+      const res = await fetch(`${API}/api/assets`, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization:  `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        // Handle FastAPI error format
+        if (data.detail && typeof data.detail === 'object') {
+          const fieldErrors = {}
+          Object.entries(data.detail).forEach(([k, v]) => {
+            fieldErrors[k] = Array.isArray(v) ? v[0] : v
+          })
+          setErrors(fieldErrors)
+        } else {
+          setServerError(data.detail || 'Failed to save asset.')
+        }
+        setLoading(false)
+        return
+      }
+
+      // If image selected, upload it
+      if (imageFile && data.id) {
+        const formData = new FormData()
+        formData.append('file', imageFile)
+        await fetch(`${API}/api/assets/${data.id}/upload-image`, {
+          method:  'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body:    formData
+        })
+      }
+
+      setSubmitted(true)
+      setTimeout(() => navigate('/assets'), 1500)
+
+    } catch {
+      setServerError('Cannot connect to server. Make sure the backend is running.')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Handle file — works for both input and drop
   const handleFile = (file) => {
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file (JPG, PNG, WEBP, etc.)')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image must be under 5MB')
-      return
-    }
+    if (!file.type.startsWith('image/')) { alert('Please upload an image file'); return }
+    if (file.size > 5 * 1024 * 1024)    { alert('Image must be under 5MB'); return }
     setImageFile(file)
     const reader = new FileReader()
     reader.onload = (e) => setImage(e.target.result)
@@ -91,18 +164,8 @@ export default function AddAssetPage() {
   }
 
   const onFileInput = (e) => handleFile(e.target.files[0])
-
-  const onDrop = (e) => {
-    e.preventDefault()
-    setDragging(false)
-    handleFile(e.dataTransfer.files[0])
-  }
-
-  const removeImage = () => {
-    setImage(null)
-    setImageFile(null)
-    if (fileRef.current) fileRef.current.value = ''
-  }
+  const onDrop      = (e) => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]) }
+  const removeImage = () => { setImage(null); setImageFile(null); if (fileRef.current) fileRef.current.value = '' }
 
   if (submitted) return (
     <UserLayout>
@@ -143,13 +206,22 @@ export default function AddAssetPage() {
             </button>
             <button
               onClick={handleSubmit}
-              className="h-10 px-5 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition"
+              disabled={loading}
+              className="h-10 px-5 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ background: 'linear-gradient(135deg, #1d9e75 0%, #0f6e56 100%)' }}
             >
-              Save Asset
+              {loading ? 'Saving...' : 'Save Asset'}
             </button>
           </div>
         </div>
+
+        {/* Server error banner */}
+        {serverError && (
+          <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3">
+            <span className="text-red-500">⚠️</span>
+            <p className="text-red-600 text-sm font-medium">{serverError}</p>
+          </div>
+        )}
 
         <div className="p-6 max-w-5xl mx-auto space-y-4">
 
@@ -167,23 +239,26 @@ export default function AddAssetPage() {
                 />
               </Field>
 
-              <Field label="Asset ID" required error={errors.assetId}>
+              <Field label="Asset ID" required error={errors.assetId || errors.asset_id}>
                 <input
-                  className={inputCls(errors.assetId)}
+                  className={inputCls(errors.assetId || errors.asset_id)}
                   placeholder="e.g. AST-1001"
                   value={form.assetId}
                   onChange={e => set('assetId', e.target.value)}
                 />
               </Field>
 
-              <Field label="Category" required error={errors.category}>
+              {/* Category — loaded from backend */}
+              <Field label="Category">
                 <select
-                  className={selectCls(errors.category)}
-                  value={form.category}
-                  onChange={e => set('category', e.target.value)}
+                  className={selectCls(false)}
+                  value={form.categoryId}
+                  onChange={e => set('categoryId', e.target.value)}
                 >
                   <option value="">Select category</option>
-                  {categories.map(c => <option key={c}>{c}</option>)}
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
                 </select>
               </Field>
 
@@ -211,7 +286,9 @@ export default function AddAssetPage() {
                   value={form.condition}
                   onChange={e => set('condition', e.target.value)}
                 >
-                  {conditions.map(c => <option key={c}>{c}</option>)}
+                  {conditions.map(c => (
+                    <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                  ))}
                 </select>
               </Field>
 
@@ -231,7 +308,6 @@ export default function AddAssetPage() {
               </Field>
 
               <Field label="Asset Image">
-                {/* Hidden input always mounted */}
                 <input
                   ref={fileRef}
                   type="file"
@@ -239,7 +315,6 @@ export default function AddAssetPage() {
                   className="hidden"
                   onChange={onFileInput}
                 />
-              
                 {!image ? (
                   <div
                     onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
@@ -247,9 +322,7 @@ export default function AddAssetPage() {
                     onDrop={onDrop}
                     onClick={() => fileRef.current.click()}
                     className={`border-2 border-dashed rounded-xl text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${
-                      dragging
-                        ? 'border-emerald-400 bg-emerald-50'
-                        : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                      dragging ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
                     }`}
                     style={{ minHeight: '118px' }}
                   >
@@ -258,41 +331,20 @@ export default function AddAssetPage() {
                     <p className="text-[10px] text-slate-400">JPG, PNG, WEBP — max 5MB</p>
                   </div>
                 ) : (
-                  <div
-                    className="flex items-center gap-3 border border-slate-200 rounded-xl p-3"
-                    style={{ minHeight: '118px' }}
-                  >
-                    <img
-                      src={image}
-                      alt="Asset preview"
-                      className="w-20 h-20 rounded-lg object-cover flex-shrink-0 border border-slate-100"
-                    />
+                  <div className="flex items-center gap-3 border border-slate-200 rounded-xl p-3" style={{ minHeight: '118px' }}>
+                    <img src={image} alt="preview" className="w-20 h-20 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-slate-700 truncate">{imageFile?.name}</p>
-                      <p className="text-[10px] text-slate-400 mb-3">
-                        {imageFile ? (imageFile.size / 1024).toFixed(1) + ' KB' : ''}
-                      </p>
+                      <p className="text-[10px] text-slate-400 mb-3">{imageFile ? (imageFile.size / 1024).toFixed(1) + ' KB' : ''}</p>
                       <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => fileRef.current.click()}
-                          className="h-7 px-3 rounded-lg border border-slate-200 text-[11px] font-semibold hover:bg-slate-100 transition"
-                        >
-                          Change
-                        </button>
-                        <button
-                          type="button"
-                          onClick={removeImage}
-                          className="h-7 px-3 rounded-lg bg-red-50 text-red-600 text-[11px] font-semibold hover:bg-red-100 transition"
-                        >
-                          Remove
-                        </button>
+                        <button type="button" onClick={() => fileRef.current.click()} className="h-7 px-3 rounded-lg border border-slate-200 text-[11px] font-semibold hover:bg-slate-100 transition">Change</button>
+                        <button type="button" onClick={removeImage} className="h-7 px-3 rounded-lg bg-red-50 text-red-600 text-[11px] font-semibold hover:bg-red-100 transition">Remove</button>
                       </div>
                     </div>
                   </div>
                 )}
               </Field>
-              
+
             </div>
           </div>
 
@@ -342,7 +394,9 @@ export default function AddAssetPage() {
                   value={form.status}
                   onChange={e => set('status', e.target.value)}
                 >
-                  {statuses.map(s => <option key={s}>{s}</option>)}
+                  {statuses.map(s => (
+                    <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                  ))}
                 </select>
               </Field>
 
@@ -359,11 +413,11 @@ export default function AddAssetPage() {
 
               <Field label="Assigned To">
                 <input
-                  className={`${inputCls(false)} ${form.status !== 'Assigned' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''}`}
+                  className={`${inputCls(false)} ${form.status !== 'assigned' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''}`}
                   placeholder="Employee name or team"
                   value={form.assignedTo}
                   onChange={e => set('assignedTo', e.target.value)}
-                  disabled={form.status !== 'Assigned'}
+                  disabled={form.status !== 'assigned'}
                 />
               </Field>
 
@@ -380,10 +434,11 @@ export default function AddAssetPage() {
             </button>
             <button
               onClick={handleSubmit}
-              className="h-10 px-6 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition"
+              disabled={loading}
+              className="h-10 px-6 rounded-xl text-white text-sm font-bold hover:scale-[1.02] transition disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ background: 'linear-gradient(135deg, #1d9e75 0%, #0f6e56 100%)' }}
             >
-              Save Asset
+              {loading ? 'Saving...' : 'Save Asset'}
             </button>
           </div>
 

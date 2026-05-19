@@ -67,10 +67,37 @@ def register(data: RegisterSchema, db: Session = Depends(get_db)):
 
 
 
-
-
 @router.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
+    from datetime import datetime, timezone
+
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail={"error": "No account found with this email."})
+    if not verify_password(data.password, user.password):
+        raise HTTPException(status_code=401, detail={"error": "Incorrect password."})
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail={"error": "Account is inactive."})
+
+    # Save last login time
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    tokens = {
+        "access":  create_access_token({"sub": str(user.id)}),
+        "refresh": create_refresh_token({"sub": str(user.id)}),
+    }
+    return {
+        "message": "Login successful.",
+        "user":    UserResponse.model_validate(user),
+        "tokens":  tokens
+    }
+
+
+
+
+
     user = db.query(User).filter(User.email == data.email).first()
 
     if not user:
